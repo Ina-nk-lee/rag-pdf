@@ -1,10 +1,18 @@
 import "dotenv/config";
 import pdf from "pdf-parse";
+import fs from "fs";
 
 //  chunk setting
 const CHUNK_SIZE = 800;
 const CHUNK_OVERLAP = 100;
 const EMBEDDING_MODEL = "text-embedding-3-small";
+
+//  read from PDF
+async function readPDF(path: string) {
+  const buf = fs.readFileSync(path);
+  const data = await pdf(buf);
+  return data.text;
+}
 
 //  chunk text function
 function chunkText(
@@ -43,3 +51,14 @@ function chunkText(
   }
   return chunks;
 }
+
+async function main() {
+  const text = await readPDF("test.pdf");
+  const chunks = chunkText(text);
+
+  console.log("Total chunks: ", chunks.length);
+  console.log("1st chunk: ", chunks[0]);
+  console.log("1st chunk: ", chunks[chunks.length - 1]);
+}
+
+main();
