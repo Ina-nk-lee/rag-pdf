@@ -1,6 +1,14 @@
 import "dotenv/config";
 import pdf from "pdf-parse";
 import fs from "fs";
+import OpenAI from "openai";
+import { createClient } from "@supabase/supabase-js";
+
+// load environment variables from .env.local
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
+const NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!; // NEXT_PUBLIC means public access granted
+// const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!; // secret key
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!; // secret key
 
 //  chunk setting
 const CHUNK_SIZE = 800;
@@ -52,13 +60,56 @@ function chunkText(
   return chunks;
 }
 
-async function main() {
-  const text = await readPDF("test.pdf");
-  const chunks = chunkText(text);
+async function embedText(text: string) {
+  const openai = new OpenAI({ apiKey: OPENAI_API_KEY }); // {} optional object
+  const res = await openai.embeddings.create({
+    model: "text-embedding-3-small",
+    input: text,
+  });
 
-  console.log("Total chunks: ", chunks.length);
-  console.log("1st chunk: ", chunks[0]);
-  console.log("1st chunk: ", chunks[chunks.length - 1]);
+  return res.data[0].embedding;
+}
+
+async function main() {
+  let text = await readPDF("scripts/test.pdf");
+  text = text.replace(/\u0000/g, "");
+  const chunks = chunkText(text);
+  const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const { data: docs, error: docError } = await supabase
+    .from("documents")
+    .insert({
+      title: "test",
+      source: "testsource",
+    })
+    .select("id")
+    .single();
+
+  if (docError) {
+    console.error("Document error: ", docError);
+  }
+
+  const docuId = docs?.id;
+
+  for (let i = 0; i < chunks.length; i++) {
+    const embeddings = await embedText(chunks[i]);
+    const { error } = await supabase.from("chunks").insert({
+      document_id: docuId,
+      content: chunks[i],
+      embedding: embeddings,
+      chunk_index: i,
+    });
+
+    if (error) {
+      console.error("Chunk error: ", error);
+    }
+  }
+
+  console.log("Complete.");
+
+  // console.log("Total chunks: ", chunks.length);
+  // console.log("1st chunk: ", chunks[0]);
+  // console.log("1st chunk: ", chunks[chunks.length - 1]);
 }
 
 main();
