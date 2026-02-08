@@ -1,6 +1,5 @@
 import "dotenv/config";
-import pdf from "pdf-parse";
-import fs from "fs";
+import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 
@@ -14,15 +13,6 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!; // secret key
 const CHUNK_SIZE = 800;
 const CHUNK_OVERLAP = 100;
 const EMBEDDING_MODEL = "text-embedding-3-small";
-
-  const openai = new OpenAI({ apiKey: OPENAI_API_KEY }); // {} optional object
-
-//  read from PDF
-async function readPDF(path: string) {
-  const buf = fs.readFileSync(path);
-  const data = await pdf(buf);
-  return data.text;
-}
 
 //  chunk text function
 function chunkText(
@@ -63,6 +53,7 @@ function chunkText(
 }
 
 async function embedText(text: string) {
+  const openai = new OpenAI({ apiKey: OPENAI_API_KEY }); // {} optional object
   const res = await openai.embeddings.create({
     model: EMBEDDING_MODEL,
     input: text,
@@ -71,35 +62,9 @@ async function embedText(text: string) {
   return res.data[0].embedding;
 }
 
-async function answerFromContext(question: string, hits: any[]) {
-  if(hits.length === 0) {
-    return "Context not found"
-  }
-  const context = hits
-    .map(
-      (h: any, j: number) =>
-        `[#${j} score=${h.score} chunk_index=${h.chunk_index}]\n${h.content}`
-    )
-    .join("\n\n---\n\n");
-
-  const res = await openai.chat.completions.create({
-    model: "gpt-4.1-mini",
-    messages: [
-      {
-        role: "system",
-        content:
-          "Answer ONLY using the provided context. If the answer is not in the context, say you don't know.",
-      },
-      { role: "user", content: `Context:\n${context}\n\nQuestion: ${question}` },
-    ],
-  });
-
-  return res.choices[0].message.content;
-}
-
 async function main() {
-  let text = await readPDF("scripts/test.pdf");
-  text = text.replace(/\u0000/g, ""); // postprocess the text to stabilize it
+  let text = "";
+  text = text.replace(/\u0000/g, "");
   const chunks = chunkText(text);
   const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -132,28 +97,7 @@ async function main() {
     }
   }
 
-const q = "Show me one sentence about `Adam Raine`.";
-const qEmb = await embedText(q);
-
-const { data: hits, error: hitErr } = await supabase.rpc("match_chunks", {
-  query_embedding: qEmb,
-  match_count: 15,
-  doc_id: docuId, 
-});
-
-console.log("hitErr:", hitErr);
-console.log(
-  hits?.map((h: any) => ({
-    score: h.score,
-    idx: h.chunk_index,
-    preview: h.content.slice(0, 120),
-  }))
-);
-
-const ans = await answerFromContext(q, hits ?? [])
-console.log("\n=== ANSWER ===\n", ans);
-
-console.log("Complete.");
+  console.log("Complete.");
 
   // console.log("Total chunks: ", chunks.length);
   // console.log("1st chunk: ", chunks[0]);

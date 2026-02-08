@@ -11,6 +11,10 @@ The goal is to ingest PDF documents, generate embeddings with **OpenAI API**, an
 - Implemented **text chunking utility** (`chunkText()`) with overlap
 - Added PDF parsing using pdf-parse
 - Inserted documents into Supabase documents table and linked chunks table with embeddings using document_id
+- Created HNSW index for vector for higher performance
+- Added a SQL function to find `k` most similar chunks with query embedding
+- Added retrieval test in scripts/ingest.ts to fetch top-k similar chunks via match_chunks
+- Added context-based QA: generate an answer using retrieved chunks
 
 1. Test OpenAI Connection
 
@@ -22,7 +26,7 @@ npx tsx scripts/test-openai.ts
 2. Ingest PDF
 
 ```bash
-   npx tsx scripts/ingest.ts
+npx tsx scripts/ingest.ts
 ```
 
 This will:
@@ -49,8 +53,9 @@ Overlapping chunks preserve context across boundaries; normalizing whitespace re
 
 ## Next Step
 
-• Add a query API route in Next.js that:
+Move retrieval + answering into a Next.js API route:
 
-1. Embeds the user query
-2. Performs a vector similarity search in Supabase
-3. Returns the most relevant chunks for answer generation
+1. Accept a query + document_id
+2. Embed the query
+3. Call `match_chunks` (vector search) filtered by document_id
+4. Send retrieved chunks as context to the LLM and return the answer
