@@ -15,6 +15,7 @@ The goal is to ingest PDF documents, generate embeddings with **OpenAI API**, an
 - Added a SQL function to find `k` most similar chunks with query embedding
 - Added retrieval test in scripts/ingest.ts to fetch top-k similar chunks via match_chunks
 - Added context-based QA: generate an answer using retrieved chunks
+- Added threshold filtering and source output to RAG
 
 1. Test OpenAI Connection
 
