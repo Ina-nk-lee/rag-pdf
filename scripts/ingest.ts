@@ -8,13 +8,15 @@ import { createClient } from "@supabase/supabase-js";
 const CHUNK_SIZE = 800;
 const CHUNK_OVERLAP = 100;
 
+// input setting
+const PDF_PATH = "scripts/test.pdf"
+
 // openAi / embedding setting
 const EMBEDDING_MODEL = "text-embedding-3-small";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 
 const NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!; // supabse endpoint
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!; // secret key
-
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY }); // {} optional object
 
@@ -73,7 +75,7 @@ async function embedText(text: string) {
 
 async function answerFromContext(question: string, hits: any[]) {
   if(hits.length === 0) {
-    console.log("Context not found")
+    return "I don't know. No relevant context found.";
   }
 
   const context = hits
@@ -97,45 +99,56 @@ async function answerFromContext(question: string, hits: any[]) {
 }
 
 async function main() {
-  let text = await readPDF("scripts/test.pdf");
+  let text = await readPDF(PDF_PATH);
   const chunks = chunkText(text);
   const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY);
+  let docuId;
 
-  // insert a new document to supabase
-  const {data: docs, error: docError} = await supabase
+  // check if the input document already exist in database
+  const { data: existingDoc } = await supabase
     .from("documents")
-    .insert({
-      title: "test",
-      source: "testsource",
-    })
     .select("id")
-    .single();
-  
-  if(docError) {
-    console.error("Document error: ", docError);
-  }
-
-  const docuId = docs?.id;
-
-  // insert text chunks and their embeddings to supabase
-  for(let i = 0; i < chunks.length; i++) {
-    const embeddings = await embedText(chunks[i]);
-    const {error} = await supabase
-      .from("chunks")
+    .eq("source", PDF_PATH)
+    .maybeSingle();
+  if (existingDoc) {
+    console.log("Document already exists.");
+    docuId = existingDoc.id;
+  } else {
+    // add a new document to database
+    const {data: docs, error: docError} = await supabase
+      .from("documents")
       .insert({
-          document_id: docuId,
-          content: chunks[i],
-          embedding: embeddings,
-          chunk_index: i,
-    });
+        title: "test.pdf",
+        source: PDF_PATH,
+      })
+      .select("id")
+      .single();
+    if(docError) {
+      console.error("Document error: ", docError);
+      return;
+    }
+    docuId = docs.id;
 
-    if(error) {
-      console.error("Chunk error: ", error);
+    // insert text chunks and their embeddings to supabase
+    for(let i = 0; i < chunks.length; i++) {
+      const embeddings = await embedText(chunks[i]);
+      const {error} = await supabase
+        .from("chunks")
+        .insert({
+            document_id: docuId,
+            content: chunks[i],
+            embedding: embeddings,
+            chunk_index: i,
+      });
+
+      if(error) {
+        console.error("Chunk error: ", error);
+      }
     }
   }
 
   // test query
-  const query = "Which school did Ina go?";
+  const query = "What education did Ina receive?";
   const query_emd = await embedText(query);
 
   // get the top 15 embeddings that are close to the query embegging
@@ -169,7 +182,7 @@ async function main() {
   )
 
   // get an answer based on the top 5 embeddings
-  const ans = await answerFromContext(query, hits ?? [])
+  const ans = await answerFromContext(query, filtered ?? [])
   console.log("\n=== ANSWER ===\n", ans);
   console.log("\n=== SOURCES ===");
   filtered.forEach((h: any) => {
