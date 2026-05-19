@@ -31,13 +31,14 @@ async function readPDF(path: string) {
   return pdf_data.text;
 }
 
+// divides text into chunks with a certain amount of ovelap
 function chunkText(text: string, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
   const chunks: string[] = [];
   let i = 0;
 
   // preprocess text for better chunk quality
   text = text
-    .replace(/\u0000/g, "")
+    .replace(/\u0000/g, " ")
     .replace(/\s+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n");
 
@@ -50,6 +51,7 @@ function chunkText(text: string, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERLAP
       chunks.push(curr);
     }
 
+    // end condition
     if(end === text.length) {
       return chunks
     }
@@ -57,6 +59,7 @@ function chunkText(text: string, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERLAP
     // set the iterator for the next iteration with some overlap
     i = end - overlap;
 
+    // safety measure in case of i becomes a negative number
     if(i < 0) {
       i = 0;
     }
@@ -64,6 +67,7 @@ function chunkText(text: string, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERLAP
   return chunks;
 }
 
+// sends given text to OpenAI Embedding API and creates embeddings
 async function embedText(text: string) {
   const response = await openai.embeddings.create({
     input: text,
@@ -73,17 +77,22 @@ async function embedText(text: string) {
   return response.data[0].embedding;
 }
 
+// OpenAI creates answer based on given question and search results(chunks) from supabase
 async function answerFromContext(question: string, hits: any[]) {
+
+  // If no chunk is found, it doesn't call OpenAI
   if(hits.length === 0) {
     return "I don't know. No relevant context found.";
   }
 
+  // creates context with the score, index, and content of each chunk in hits 
   const context = hits
     .map(
       (h: any, j: number) =>
         `[#${j} score=${h.score} chunk_index=${h.chunk_index}]\n${h.content}`
     ).join("\n\n---\n\n");
 
+  // calls OpenAI chat API to create an answer based on context
   const res = await openai.chat.completions.create({
     model: "gpt-4.1-mini",
     messages: [{
@@ -98,6 +107,7 @@ async function answerFromContext(question: string, hits: any[]) {
   return res.choices[0].message.content;
 }
 
+// main function
 async function main() {
   let text = await readPDF(PDF_PATH);
   const chunks = chunkText(text);
@@ -147,17 +157,18 @@ async function main() {
     }
   }
 
-  // test query
+  // test query(question)
   const query = "What education did Ina receive?";
   const query_emd = await embedText(query);
 
-  // get the top 15 embeddings that are close to the query embegging
+  // get the top 15 embeddings that are close to the query embeddings
   const {data: hits, error: hitErr} = await supabase.rpc("match_chunks", {
     query_embedding: query_emd,
     match_count: 15,
     doc_id: docuId,
   });
 
+  // error handling
   if(hitErr) {
     console.log("hitErr: ", hitErr);
   }
@@ -181,7 +192,7 @@ async function main() {
     }))
   )
 
-  // get an answer based on the top 5 embeddings
+  // get an answer from OpenAI chat API based on the top 5 embeddings
   const ans = await answerFromContext(query, filtered ?? [])
   console.log("\n=== ANSWER ===\n", ans);
   console.log("\n=== SOURCES ===");
